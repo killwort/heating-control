@@ -1,0 +1,3 @@
+[submodule "libsetila"]
+	path = libsetila
+	url = https://github.com/positronic57/libsetila.git
