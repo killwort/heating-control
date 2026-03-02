@@ -15,23 +15,23 @@ extern int measured_adc[4];
 void temp_scan(int id);
 
 const ::std::filesystem::path chip_path("/dev/gpiochip0");
-const int line_offset_1=199;
-const int line_offset_2=198;
-const int line_offset_3=201;
-int switch_address[3]={199,198,201};
+int switch_address[3]={199,201,198};//198,201};
 bool switch_enabled[3]={false};
+std::time_t switch_enabled_time[3]={0};
 double line_delta = 4.0;
 double line_balance = 0.0;
 double solar_on = 4.0;
 double solar_off = 1.0;
 
 void set_switch(char* arg, int channel, bool value){
+	if(!value&&std::time_t(nullptr)-switch_enabled_time[channel]<30)return;
 	auto chip=::gpiod::chip(chip_path);
 	auto line=chip.get_line(switch_address[channel]);
 	auto req=::gpiod::line_request{arg,::gpiod::line_request::DIRECTION_OUTPUT,0};
 	line.request(req);
 	line.set_direction_output();
 	line.set_value(value?1:0);
+	if(!switch_enabled[channel]&&value)switch_enabled_time[channel]=std::time_t(nullptr);
 	switch_enabled[channel]=value;
 }
 
