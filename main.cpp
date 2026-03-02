@@ -16,22 +16,23 @@ void temp_scan(int id);
 
 const ::std::filesystem::path chip_path("/dev/gpiochip0");
 int switch_address[3]={199,201,198};//198,201};
-bool switch_enabled[3]={false};
-std::time_t switch_enabled_time[3]={0};
+bool switch_enabled[3]={false,false,false};
+std::time_t switch_enabled_time[3]={std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())};
 double line_delta = 4.0;
 double line_balance = 0.0;
 double solar_on = 4.0;
 double solar_off = 1.0;
 
 void set_switch(char* arg, int channel, bool value){
-	if(!value&&std::time_t(nullptr)-switch_enabled_time[channel]<30)return;
+	auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	if(!value&&now-switch_enabled_time[channel]<30)return;
 	auto chip=::gpiod::chip(chip_path);
 	auto line=chip.get_line(switch_address[channel]);
 	auto req=::gpiod::line_request{arg,::gpiod::line_request::DIRECTION_OUTPUT,0};
 	line.request(req);
 	line.set_direction_output();
 	line.set_value(value?1:0);
-	if(!switch_enabled[channel]&&value)switch_enabled_time[channel]=std::time_t(nullptr);
+	if(!switch_enabled[channel]&&value)switch_enabled_time[channel]=now;
 	switch_enabled[channel]=value;
 }
 
@@ -66,6 +67,7 @@ MHD_Result answer(void *cls, struct MHD_Connection *connection,
 		config.write(reinterpret_cast<char*>(&solar_off), sizeof solar_off);
 	}
 	else if(strncmp(url, "/metrics", 8)==0){
+		auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 		response<<"measured_temp{place=\"floor1Return\"} "<<measured_temperatures[1]<<std::endl;
 		response<<"measured_temp{place=\"floor2Return\"} "<<measured_temperatures[0]<<std::endl;
 		response<<"measured_temp{place=\"boiler\"} "<<measured_temperatures[2]<<std::endl;
@@ -77,6 +79,9 @@ MHD_Result answer(void *cls, struct MHD_Connection *connection,
 		response<<"pump_state{place=\"floor1\"} "<<(switch_enabled[0]?1:0)<<std::endl;
 		response<<"pump_state{place=\"floor2\"} "<<(switch_enabled[1]?1:0)<<std::endl;
 		response<<"pump_state{place=\"solarCollector\"} "<<(switch_enabled[2]?1:0)<<std::endl;
+		response<<"pump_active_time{place=\"floor1\"} "<<(now-switch_enabled_time[0])<<std::endl;
+		response<<"pump_active_time{place=\"floor2\"} "<<(now-switch_enabled_time[1])<<std::endl;
+		response<<"pump_active_time{place=\"solarCollector\"} "<<(now-switch_enabled_time[2])<<std::endl;
 		response<<"configuration{parameter=\"lineDelta\"} "<<line_delta<<std::endl;
 		response<<"configuration{parameter=\"lineBalance\"} "<<line_balance<<std::endl;
 		response<<"configuration{parameter=\"solarOn\"} "<<solar_on<<std::endl;
