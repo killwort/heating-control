@@ -22,6 +22,7 @@ double line_delta = 4.0;
 double line_balance = 0.0;
 double solar_on = 4.0;
 double solar_off = 1.0;
+int winter = 1;
 
 void set_switch(char* arg, int channel, bool value){
 	auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -47,6 +48,8 @@ MHD_Result handle_arg (void *cls, enum MHD_ValueKind kind, const char *key, cons
 		solar_on = atof(value);
 	else if(strncmp(key,"solarOff",8)==0 && value)
 		solar_off = atof(value);
+	else if(strncmp(key,"winter",6)==0 && value)
+		winter = atoi(value)==0?0:1;
 	if(solar_off>solar_on-1.0)solar_off=solar_on-1.0;
 	return MHD_YES;
 }
@@ -65,6 +68,7 @@ MHD_Result answer(void *cls, struct MHD_Connection *connection,
 		config.write(reinterpret_cast<char*>(&line_balance), sizeof line_balance);
 		config.write(reinterpret_cast<char*>(&solar_on), sizeof solar_on);
 		config.write(reinterpret_cast<char*>(&solar_off), sizeof solar_off);
+		config.write(reinterpret_cast<char*>(&winter), sizeof winter);
 	}
 	else if(strncmp(url, "/metrics", 8)==0){
 		auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -86,6 +90,7 @@ MHD_Result answer(void *cls, struct MHD_Connection *connection,
 		response<<"configuration{parameter=\"lineBalance\"} "<<line_balance<<std::endl;
 		response<<"configuration{parameter=\"solarOn\"} "<<solar_on<<std::endl;
 		response<<"configuration{parameter=\"solarOff\"} "<<solar_off<<std::endl;
+		response<<"configuration{parameter=\"winter\"} "<<solar_off<<std::endl;
 	}else{
 		response<<"{\"measured\":{\"floor1ReturnTemp\":";
 		response<<measured_temperatures[1]<<",\"floor2ReturnTemp\":"<<measured_temperatures[0];
@@ -94,7 +99,7 @@ MHD_Result answer(void *cls, struct MHD_Connection *connection,
 		response<<",\"floor1PumpEnabled\":"<<(switch_enabled[0]?"true":"false");
 		response<<",\"floor2PumpEnabled\":"<<(switch_enabled[1]?"true":"false");
 		response<<"},\"configuration\":{\"lineDelta\":"<<(float)line_delta<<",\"lineBalance\":"<<(float)line_balance;
-		response<<",\"solarOn\""<<(float)solar_on<<",\"solarOff\":"<<(float)solar_off<<"}}";
+		response<<",\"winter\":"<<winter<<",\"solarOn\":"<<(float)solar_on<<",\"solarOff\":"<<(float)solar_off<<"}}";
 	}
     auto str=response.str();
     struct MHD_Response *resp = MHD_create_response_from_buffer(str.size(),
@@ -116,6 +121,7 @@ int main(int argc, char**argv){
 		config.read(reinterpret_cast<char*>(&line_balance), sizeof line_balance);
 		config.read(reinterpret_cast<char*>(&solar_on), sizeof solar_on);
 		config.read(reinterpret_cast<char*>(&solar_off), sizeof solar_off);
+		config.read(reinterpret_cast<char*>(&winter), sizeof winter);
 	}
 	std::thread temp_scanner(temp_scan,1);
 	struct MHD_Daemon *daemon;
@@ -125,10 +131,15 @@ int main(int argc, char**argv){
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 		//Выключаем линии, если они более чем на line_delta градуса горячее других
-		f1 = measured_temperatures[1];
-		f2 = measured_temperatures[0] - line_balance;
-		set_switch(argv[0], 0, f1 - f2 <= line_delta);
-		set_switch(argv[0], 1, f2 - f1 <= line_delta);
+		if(winter == 0){
+			set_switch(argv[0], 0, false);
+			set_switch(argv[0], 1, false);
+		}else{
+			f1 = measured_temperatures[1];
+			f2 = measured_temperatures[0] - line_balance;
+			set_switch(argv[0], 0, f1 - f2 <= line_delta);
+			set_switch(argv[0], 1, f2 - f1 <= line_delta);
+		}
 
 		//Включаем насос солнечного коллектора, если коллектор более чем на 4 градуса горячее бойлера
 		if(switch_enabled[2])
